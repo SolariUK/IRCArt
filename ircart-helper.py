@@ -1,5 +1,5 @@
 """
-fartknocker_ircart_helper.py
+ircart_helper.py
 
 Small bot-side helper for IRCART/1 files.
 
@@ -12,7 +12,7 @@ Small bot-side helper for IRCART/1 files.
 
 Typical use:
 
-    from fartknocker_ircart_helper import load_for_irc
+    from ircart_helper import load_for_irc
 
     rendered = load_for_irc("art/facepalm.ircart")
 
@@ -358,7 +358,7 @@ def load_for_irc(
     reset_each_line: bool = True,
 ) -> RenderedIRCArt:
     """
-    Convenience entry point for fartknocker.
+    Convenience entry point for bot.
 
     Returns rendered message bodies only. It deliberately does NOT send,
     sleep, queue, throttle, or split them.
