@@ -261,7 +261,7 @@ The real rendered output contains the actual control characters, not the visible
 The bot-side helper can be imported directly:
 
 ```python
-from fartknocker_ircart_helper import load_for_irc
+from ircart_helper import load_for_irc
 ```
 
 Load an image asset:
