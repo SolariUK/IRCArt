@@ -16,6 +16,23 @@ python ircart.py convert picard.jpg picard.ircart \
   --dither none \
   --encoding rle
 
+Grayscale:
+
+python ircart.py convert picard.jpg picard-grey.ircart \
+  --palette mirc99 \
+  --mode grayscale \
+  --dither none \
+  --encoding rle
+
+Colour with boosted saturation:
+
+python ircart.py convert picard.jpg picard-vivid.ircart \
+  --palette mirc99 \
+  --mode color \
+  --saturation 1.2 \
+  --dither none \
+  --encoding rle
+
 """
 
 from __future__ import annotations
@@ -25,7 +42,7 @@ from pathlib import Path
 import argparse
 from typing import Iterable
 
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 
 # ---------- Palettes ----------
@@ -77,6 +94,16 @@ MIRC99 = MIRC16 + tuple(
 PALETTES = {
     "mirc16": MIRC16,
     "mirc99": MIRC99,  # indexes 0..98, leaving 99 reserved as IRC "default"
+}
+
+# Fixed grayscale ramps used by --mode grayscale.
+#
+# mIRC99 indexes 88..98 are the fixed black-to-white grayscale ramp.
+# mIRC16 has only four broadly useful grayscale slots. Their exact appearance
+# can still vary by IRC client/theme, like the rest of the classic 0..15 palette.
+GRAYSCALE_INDEXES = {
+    "mirc16": (1, 14, 15, 0),
+    "mirc99": tuple(range(88, 99)),
 }
 
 
@@ -164,8 +191,29 @@ def colour_distance(a: tuple[float, float, float],
 def nearest_palette_index(
     rgb: tuple[float, float, float],
     palette: tuple[tuple[int, int, int], ...],
+    allowed_indexes: tuple[int, ...] | None = None,
 ) -> int:
-    return min(range(len(palette)), key=lambda i: colour_distance(rgb, palette[i]))
+    indexes = allowed_indexes if allowed_indexes is not None else range(len(palette))
+    return min(indexes, key=lambda i: colour_distance(rgb, palette[i]))
+
+
+def luminance(rgb: tuple[float, float, float]) -> float:
+    """Return approximate perceptual luminance for an sRGB triplet."""
+    r, g, b = rgb
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def nearest_grayscale_index(
+    rgb: tuple[float, float, float],
+    palette: tuple[tuple[int, int, int], ...],
+    grayscale_indexes: tuple[int, ...],
+) -> int:
+    """Map a source colour to the nearest available grayscale luminance."""
+    source_luma = luminance(rgb)
+    return min(
+        grayscale_indexes,
+        key=lambda i: abs(luminance(palette[i]) - source_luma),
+    )
 
 
 def choose_output_size(
@@ -198,17 +246,38 @@ def choose_output_size(
 def quantize_none(
     image: Image.Image,
     palette: tuple[tuple[int, int, int], ...],
+    *,
+    mode: str = "color",
+    palette_name: str = "mirc16",
 ) -> list[list[int]]:
-    return [
-        [nearest_palette_index(image.getpixel((x, y)), palette)
-         for x in range(image.width)]
-        for y in range(image.height)
-    ]
+    if mode == "color":
+        return [
+            [nearest_palette_index(image.getpixel((x, y)), palette)
+             for x in range(image.width)]
+            for y in range(image.height)
+        ]
+
+    if mode == "grayscale":
+        grayscale_indexes = GRAYSCALE_INDEXES[palette_name]
+        return [
+            [nearest_grayscale_index(
+                image.getpixel((x, y)),
+                palette,
+                grayscale_indexes,
+            )
+             for x in range(image.width)]
+            for y in range(image.height)
+        ]
+
+    raise ValueError(f"unknown mode: {mode}")
 
 
 def quantize_floyd_steinberg(
     image: Image.Image,
     palette: tuple[tuple[int, int, int], ...],
+    *,
+    mode: str = "color",
+    palette_name: str = "mirc16",
 ) -> list[list[int]]:
     w, h = image.size
     work = [
@@ -226,7 +295,16 @@ def quantize_floyd_steinberg(
     for y in range(h):
         for x in range(w):
             old = tuple(work[y][x])
-            idx = nearest_palette_index(old, palette)
+            if mode == "color":
+                idx = nearest_palette_index(old, palette)
+            elif mode == "grayscale":
+                idx = nearest_grayscale_index(
+                    old,
+                    palette,
+                    GRAYSCALE_INDEXES[palette_name],
+                )
+            else:
+                raise ValueError(f"unknown mode: {mode}")
             new = palette[idx]
             result[y][x] = idx
             err = tuple(old[c] - new[c] for c in range(3))
@@ -246,6 +324,8 @@ def image_to_ircart(
     palette_name: str = "mirc16",
     dither: str = "none",
     encoding: str = "plain",
+    mode: str = "color",
+    saturation: float = 1.0,
 ) -> IRCArt:
     image = image.convert("RGB")
     width, height = choose_output_size(
@@ -255,12 +335,32 @@ def image_to_ircart(
 
     sample_height = height * 2
     resized = image.resize((width, sample_height), Image.Resampling.LANCZOS)
+
+    if saturation <= 0:
+        raise ValueError("saturation must be positive")
+
+    if mode == "color" and saturation != 1.0:
+        resized = ImageEnhance.Color(resized).enhance(saturation)
+
     palette = palette_rgb(palette_name)
 
+    if mode not in {"color", "grayscale"}:
+        raise ValueError(f"unknown mode: {mode}")
+
     if dither == "none":
-        q = quantize_none(resized, palette)
+        q = quantize_none(
+            resized,
+            palette,
+            mode=mode,
+            palette_name=palette_name,
+        )
     elif dither == "floyd-steinberg":
-        q = quantize_floyd_steinberg(resized, palette)
+        q = quantize_floyd_steinberg(
+            resized,
+            palette,
+            mode=mode,
+            palette_name=palette_name,
+        )
     else:
         raise ValueError(f"unknown dither mode: {dither}")
 
@@ -315,6 +415,8 @@ def convert_file(
     palette_name: str = "mirc16",
     dither: str = "none",
     encoding: str = "plain",
+    mode: str = "color",
+    saturation: float = 1.0,
     preview_path: Path | None = None,
 ) -> IRCArt:
     with Image.open(input_path) as image:
@@ -325,6 +427,8 @@ def convert_file(
             palette_name=palette_name,
             dither=dither,
             encoding=encoding,
+            mode=mode,
+            saturation=saturation,
         )
 
     output_path.write_text(art.to_text(), encoding="utf-8")
@@ -647,6 +751,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="plain",
         help="IRCART row encoding (default: plain)",
     )
+    p_convert.add_argument(
+        "--mode",
+        choices=("color", "grayscale"),
+        default="color",
+        help="image colour mode (default: color)",
+    )
+    p_convert.add_argument(
+        "--saturation",
+        type=float,
+        default=1.0,
+        help="multiply colour saturation before quantization (default: 1.0)",
+    )
     p_convert.add_argument("--preview", type=Path)
 
     p_render = sub.add_parser("render", help="render IRCART/1 to IRC text")
@@ -685,11 +801,15 @@ def main() -> None:
             palette_name=args.palette,
             dither=args.dither,
             encoding=args.encoding,
+            mode=args.mode,
+            saturation=args.saturation,
             preview_path=args.preview,
         )
         print(
             f"Wrote {args.output}: {art.width} chars x {art.height} lines; "
-            f"palette={art.palette}; dither={args.dither}; encoding={art.encoding}"
+            f"palette={art.palette}; dither={args.dither}; "
+            f"encoding={art.encoding}; mode={args.mode}; "
+            f"saturation={args.saturation}"
         )
     elif args.cmd == "render":
         art = render_file(

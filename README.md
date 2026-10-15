@@ -1,6 +1,6 @@
-# IRCART for IRC Bot
+# IRCART for fartknocker
 
-Compact coloured IRC art from ordinary images. Coded with ChatGPT Plus.
+Compact coloured IRC art from ordinary images.
 
 This project provides an offline Python converter that turns PNG/JPEG images into small coloured IRC art using Unicode half-block characters (`▀`). Each output character represents two vertical source pixels by using the IRC foreground colour for the upper half and the IRC background colour for the lower half.
 
@@ -15,6 +15,8 @@ It was built for an IRC bot, but the format and converter are intentionally gene
 - Supports:
   - `mirc16` for broad compatibility
   - `mirc99` for much better colour reproduction on clients that support extended IRC colours correctly
+- Optional grayscale output
+- Optional saturation boost before quantization
 - Optional Floyd–Steinberg dithering
 - Plain or RLE-compressed `.ircart` files
 - Strict parser and validator
@@ -38,12 +40,12 @@ Typical files in this setup are:
 
 ```text
 ircart.py
-ircart_helper.py
+fartknocker_ircart_helper.py
 ```
 
 `ircart.py` handles image conversion, `.ircart` parsing, validation, preview generation, and IRC rendering.
 
-`ircart_helper.py` is intended for use inside the bot. It loads a `.ircart` file and returns ready-to-send IRC message bodies without performing any sending, sleeping, throttling, or queue management.
+`fartknocker_ircart_helper.py` is intended for use inside the bot. It loads a `.ircart` file and returns ready-to-send IRC message bodies without performing any sending, sleeping, throttling, or queue management.
 
 ## Quick start
 
@@ -54,8 +56,9 @@ Image Quality Comparison:
 Convert an image using the recommended high-quality settings:
 
 ```bash
-python ircart.py convert picard.jpg picard.ircart \
+python3 ircart.py convert picard.jpg picard.ircart \
   --palette mirc99 \
+  --mode color \
   --dither none \
   --encoding rle
 ```
@@ -63,8 +66,9 @@ python ircart.py convert picard.jpg picard.ircart \
 PNG works too:
 
 ```bash
-python ircart.py convert picard.png picard.ircart \
+python3 ircart.py convert picard.png picard.ircart \
   --palette mirc99 \
+  --mode color \
   --dither none \
   --encoding rle
 ```
@@ -74,8 +78,9 @@ The default output is approximately 36 IRC characters wide and 18 IRC lines high
 You can override the limits:
 
 ```bash
-python ircart.py convert picard.jpg picard.ircart \
+python3 ircart.py convert picard.jpg picard.ircart \
   --palette mirc99 \
+  --mode color \
   --dither none \
   --encoding rle \
   --max-width 40 \
@@ -87,14 +92,90 @@ python ircart.py convert picard.jpg picard.ircart \
 The converter can also write a PNG preview of the quantized artwork:
 
 ```bash
-python ircart.py convert picard.jpg picard.ircart \
+python3 ircart.py convert picard.jpg picard.ircart \
   --palette mirc99 \
+  --mode color \
   --dither none \
   --encoding rle \
   --preview picard-preview.png
 ```
 
 The preview shows the sampled colour grid. Actual IRC appearance still depends on the receiving client's font and colour palette.
+
+## Saturation
+
+You can increase or decrease image saturation before palette quantization:
+
+```bash
+--saturation 1.0
+```
+
+`1.0` leaves the source saturation unchanged.
+
+Values above `1.0` increase saturation:
+
+```bash
+--saturation 1.4
+```
+
+```bash
+--saturation 1.8
+```
+
+Values below `1.0` reduce saturation:
+
+```bash
+--saturation 0.8
+```
+
+For pale or low-saturation portraits, increasing saturation can help the quantizer choose warmer IRC colours instead of collapsing too much of the image into greys.
+
+Example:
+
+```bash
+python3 ircart.py convert processing/girl.png girl.ircart \
+  --palette mirc99 \
+  --mode color \
+  --saturation 1.8 \
+  --dither none \
+  --encoding rle \
+  --preview girl-preview.png
+```
+
+The default remains `1.0`, so existing conversions are unchanged unless you explicitly request a boost.
+
+Saturation is intended for `--mode color`. It is ignored for practical purposes in grayscale mode.
+
+## Grayscale mode
+
+Grayscale can be useful for photographs that do not map attractively to the limited IRC colour palette.
+
+Use:
+
+```bash
+--mode grayscale
+```
+
+Example:
+
+```bash
+python3 ircart.py convert processing/girl.png girl-grey.ircart \
+  --palette mirc99 \
+  --mode grayscale \
+  --dither none \
+  --encoding rle \
+  --preview girl-grey-preview.png
+```
+
+With `mirc99`, grayscale uses the fixed grayscale ramp at colour indexes `88` through `98`.
+
+With `mirc16`, grayscale falls back to the available black, grey, light-grey, and white slots. Exact shades can vary between clients and themes.
+
+Normal colour conversion remains:
+
+```bash
+--mode color
+```
 
 ## Palette choice
 
@@ -119,8 +200,9 @@ Use for broader compatibility with older or more limited clients:
 Example:
 
 ```bash
-python ircart.py convert picard.jpg picard16.ircart \
+python3 ircart.py convert picard.jpg picard16.ircart \
   --palette mirc16 \
+  --mode color \
   --dither none \
   --encoding rle
 ```
@@ -218,7 +300,7 @@ The parser validates RLE strictly and rejects runs that would expand past the de
 Validate and summarize an `.ircart` file:
 
 ```bash
-python ircart.py inspect picard.ircart
+python3 ircart.py inspect picard.ircart
 ```
 
 Example output:
@@ -232,13 +314,13 @@ Valid IRCART/1: palette=mirc99, 36 chars x 18 lines
 Render an `.ircart` file into IRC-formatted message bodies:
 
 ```bash
-python ircart.py render picard.ircart rendered.txt
+python3 ircart.py render picard.ircart rendered.txt
 ```
 
 For debugging, use escaped control codes:
 
 ```bash
-python ircart.py render picard.ircart rendered-debug.txt --escape
+python3 ircart.py render picard.ircart rendered-debug.txt --escape
 ```
 
 The debug form shows IRC controls visibly, for example:
@@ -261,7 +343,7 @@ The real rendered output contains the actual control characters, not the visible
 The bot-side helper can be imported directly:
 
 ```python
-from ircart_helper import load_for_irc
+from fartknocker_ircart_helper import load_for_irc
 ```
 
 Load an image asset:
@@ -287,7 +369,7 @@ art.total_utf8_bytes
 Example:
 
 ```python
-from ircart_helper import load_for_irc
+from fartknocker_ircart_helper import load_for_irc
 
 art = load_for_irc("picard.ircart")
 
@@ -367,7 +449,7 @@ ircart.py convert
   ↓
 .ircart asset
   ↓
-ircart_helper.py
+fartknocker_ircart_helper.py
   ↓
 validated IRC message bodies
   ↓
@@ -376,11 +458,33 @@ existing bot queue / flood control
 IRC
 ```
 
-For best quality:
+For best colour quality:
 
 ```bash
-python ircart.py convert image.jpg image99.ircart \
+python3 ircart.py convert image.jpg image99.ircart \
   --palette mirc99 \
+  --mode color \
+  --dither none \
+  --encoding rle
+```
+
+For a more vivid photo:
+
+```bash
+python3 ircart.py convert image.jpg image99-vivid.ircart \
+  --palette mirc99 \
+  --mode color \
+  --saturation 1.6 \
+  --dither none \
+  --encoding rle
+```
+
+For grayscale:
+
+```bash
+python3 ircart.py convert image.jpg image-grey.ircart \
+  --palette mirc99 \
+  --mode grayscale \
   --dither none \
   --encoding rle
 ```
@@ -388,8 +492,9 @@ python ircart.py convert image.jpg image99.ircart \
 For compatibility:
 
 ```bash
-python ircart.py convert image.jpg image16.ircart \
+python3 ircart.py convert image.jpg image16.ircart \
   --palette mirc16 \
+  --mode color \
   --dither none \
   --encoding rle
 ```
@@ -428,4 +533,4 @@ That is what allows compact images to retain much more vertical detail than one 
 
 ## License
 
-MIT
+Add your preferred license here.
