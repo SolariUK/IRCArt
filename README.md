@@ -53,6 +53,8 @@ Image Quality Comparison:
 
 ![Image Quality Comparison](examples/picard_palette_comparison.png)
 
+Line Art/Pixel Art Output:
+
 ![Line/Pixel Art Conversion](examples/sonic-output-30x39.png)
 
 Convert an image using the recommended high-quality settings:
