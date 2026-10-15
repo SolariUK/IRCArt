@@ -1,6 +1,6 @@
 # IRCART for IRC Bot
 
-Compact coloured IRC art from ordinary images.
+Compact coloured IRC art from ordinary images. Coded with ChatGPT Plus.
 
 This project provides an offline Python converter that turns PNG/JPEG images into small coloured IRC art using Unicode half-block characters (`▀`). Each output character represents two vertical source pixels by using the IRC foreground colour for the upper half and the IRC background colour for the lower half.
 
@@ -428,4 +428,4 @@ That is what allows compact images to retain much more vertical detail than one 
 
 ## License
 
-Add your preferred license here.
+MIT
