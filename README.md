@@ -49,7 +49,7 @@ ircart_helper.py
 
 Image Quality Comparison:
 
-![Image Quality Comparison](picard_palette_comparison.png)
+![Image Quality Comparison](examples/picard_palette_comparison.png)
 
 Convert an image using the recommended high-quality settings:
 
