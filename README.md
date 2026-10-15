@@ -537,4 +537,4 @@ That is what allows compact images to retain much more vertical detail than one 
 
 ## License
 
-Add your preferred license here.
+MIT
