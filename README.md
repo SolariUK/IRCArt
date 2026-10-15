@@ -1,4 +1,4 @@
-# IRCART for fartknocker
+# IRCART for IRC Bots
 
 Compact coloured IRC art from ordinary images.
 
@@ -40,12 +40,12 @@ Typical files in this setup are:
 
 ```text
 ircart.py
-fartknocker_ircart_helper.py
+ircart_helper.py
 ```
 
 `ircart.py` handles image conversion, `.ircart` parsing, validation, preview generation, and IRC rendering.
 
-`fartknocker_ircart_helper.py` is intended for use inside the bot. It loads a `.ircart` file and returns ready-to-send IRC message bodies without performing any sending, sleeping, throttling, or queue management.
+`ircart_helper.py` is intended for use inside the bot. It loads a `.ircart` file and returns ready-to-send IRC message bodies without performing any sending, sleeping, throttling, or queue management.
 
 ## Quick start
 
@@ -343,7 +343,7 @@ The real rendered output contains the actual control characters, not the visible
 The bot-side helper can be imported directly:
 
 ```python
-from fartknocker_ircart_helper import load_for_irc
+from ircart_helper import load_for_irc
 ```
 
 Load an image asset:
@@ -369,7 +369,7 @@ art.total_utf8_bytes
 Example:
 
 ```python
-from fartknocker_ircart_helper import load_for_irc
+from ircart_helper import load_for_irc
 
 art = load_for_irc("picard.ircart")
 
@@ -449,7 +449,7 @@ ircart.py convert
   ↓
 .ircart asset
   ↓
-fartknocker_ircart_helper.py
+ircart_helper.py
   ↓
 validated IRC message bodies
   ↓
