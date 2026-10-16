@@ -33,6 +33,17 @@ python ircart.py convert picard.jpg picard-vivid.ircart \
   --dither none \
   --encoding rle
 
+Colour steering with hue shift and channel gains:
+
+python ircart.py convert image.jpg image-adjusted.ircart \
+  --palette mirc99 \
+  --mode color \
+  --hue-shift 20 \
+  --red-gain 0.95 \
+  --green-gain 1.15 \
+  --blue-gain 1.0 \
+  --encoding rle
+
 """
 
 from __future__ import annotations
@@ -40,6 +51,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import argparse
+import colorsys
+import math
 from typing import Iterable
 
 from PIL import Image, ImageEnhance
@@ -216,6 +229,61 @@ def nearest_grayscale_index(
     )
 
 
+
+def validate_colour_adjustments(
+    *,
+    saturation: float,
+    hue_shift: float,
+    red_gain: float,
+    green_gain: float,
+    blue_gain: float,
+) -> None:
+    """Validate pre-quantization colour adjustment parameters."""
+    if not math.isfinite(saturation) or saturation <= 0:
+        raise ValueError("saturation must be finite and positive")
+    if not math.isfinite(hue_shift):
+        raise ValueError("hue shift must be finite")
+    gains = (red_gain, green_gain, blue_gain)
+    if any(not math.isfinite(gain) or gain < 0 for gain in gains):
+        raise ValueError("colour gains must be finite and non-negative")
+
+
+def adjust_colours(
+    image: Image.Image,
+    *,
+    saturation: float = 1.0,
+    hue_shift: float = 0.0,
+    red_gain: float = 1.0,
+    green_gain: float = 1.0,
+    blue_gain: float = 1.0,
+) -> Image.Image:
+    """Apply saturation, HSV hue rotation, then RGB channel multipliers."""
+    validate_colour_adjustments(
+        saturation=saturation, hue_shift=hue_shift,
+        red_gain=red_gain, green_gain=green_gain, blue_gain=blue_gain,
+    )
+    result = image.convert("RGB")
+    if saturation != 1.0:
+        result = ImageEnhance.Color(result).enhance(saturation)
+    rotation = (hue_shift % 360.0) / 360.0
+    if rotation:
+        pixels=[]
+        for rgb in result.getdata():
+            h,s,v=colorsys.rgb_to_hsv(*(channel/255.0 for channel in rgb))
+            shifted=colorsys.hsv_to_rgb((h+rotation)%1.0,s,v)
+            pixels.append(tuple(round(channel*255.0) for channel in shifted))
+        adjusted=Image.new("RGB", result.size)
+        adjusted.putdata(pixels)
+        result=adjusted
+    gains=(red_gain, green_gain, blue_gain)
+    if gains != (1.0,1.0,1.0):
+        channels=[
+            channel.point([round(max(0,min(255,value*gain))) for value in range(256)])
+            for channel,gain in zip(result.split(), gains)
+        ]
+        result=Image.merge("RGB", channels)
+    return result
+
 def choose_output_size(
     source_width: int,
     source_height: int,
@@ -326,6 +394,11 @@ def image_to_ircart(
     encoding: str = "plain",
     mode: str = "color",
     saturation: float = 1.0,
+    *,
+    hue_shift: float = 0.0,
+    red_gain: float = 1.0,
+    green_gain: float = 1.0,
+    blue_gain: float = 1.0,
 ) -> IRCArt:
     image = image.convert("RGB")
     width, height = choose_output_size(
@@ -336,16 +409,21 @@ def image_to_ircart(
     sample_height = height * 2
     resized = image.resize((width, sample_height), Image.Resampling.LANCZOS)
 
-    if saturation <= 0:
-        raise ValueError("saturation must be positive")
-
-    if mode == "color" and saturation != 1.0:
-        resized = ImageEnhance.Color(resized).enhance(saturation)
-
-    palette = palette_rgb(palette_name)
+    validate_colour_adjustments(
+        saturation=saturation, hue_shift=hue_shift,
+        red_gain=red_gain, green_gain=green_gain, blue_gain=blue_gain,
+    )
 
     if mode not in {"color", "grayscale"}:
         raise ValueError(f"unknown mode: {mode}")
+
+    if mode == "color":
+        resized = adjust_colours(
+            resized, saturation=saturation, hue_shift=hue_shift,
+            red_gain=red_gain, green_gain=green_gain, blue_gain=blue_gain,
+        )
+
+    palette = palette_rgb(palette_name)
 
     if dither == "none":
         q = quantize_none(
@@ -418,6 +496,11 @@ def convert_file(
     mode: str = "color",
     saturation: float = 1.0,
     preview_path: Path | None = None,
+    *,
+    hue_shift: float = 0.0,
+    red_gain: float = 1.0,
+    green_gain: float = 1.0,
+    blue_gain: float = 1.0,
 ) -> IRCArt:
     with Image.open(input_path) as image:
         art = image_to_ircart(
@@ -429,6 +512,10 @@ def convert_file(
             encoding=encoding,
             mode=mode,
             saturation=saturation,
+            hue_shift=hue_shift,
+            red_gain=red_gain,
+            green_gain=green_gain,
+            blue_gain=blue_gain,
         )
 
     output_path.write_text(art.to_text(), encoding="utf-8")
@@ -763,6 +850,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="multiply colour saturation before quantization (default: 1.0)",
     )
+    p_convert.add_argument("--hue-shift", type=float, default=0.0,
+                           help="rotate hue in degrees before quantization (default: 0.0)")
+    p_convert.add_argument("--red-gain", type=float, default=1.0,
+                           help="multiply red channel before quantization (default: 1.0)")
+    p_convert.add_argument("--green-gain", type=float, default=1.0,
+                           help="multiply green channel before quantization (default: 1.0)")
+    p_convert.add_argument("--blue-gain", type=float, default=1.0,
+                           help="multiply blue channel before quantization (default: 1.0)")
     p_convert.add_argument("--preview", type=Path)
 
     p_render = sub.add_parser("render", help="render IRCART/1 to IRC text")
@@ -804,12 +899,17 @@ def main() -> None:
             mode=args.mode,
             saturation=args.saturation,
             preview_path=args.preview,
+            hue_shift=args.hue_shift,
+            red_gain=args.red_gain,
+            green_gain=args.green_gain,
+            blue_gain=args.blue_gain,
         )
         print(
             f"Wrote {args.output}: {art.width} chars x {art.height} lines; "
             f"palette={art.palette}; dither={args.dither}; "
             f"encoding={art.encoding}; mode={args.mode}; "
-            f"saturation={args.saturation}"
+            f"saturation={args.saturation}; hue_shift={args.hue_shift}; "
+            f"gains=({args.red_gain},{args.green_gain},{args.blue_gain})"
         )
     elif args.cmd == "render":
         art = render_file(

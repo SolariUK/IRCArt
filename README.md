@@ -17,6 +17,8 @@ It was built for an IRC bot, but the format and converter are intentionally gene
   - `mirc99` for much better colour reproduction on clients that support extended IRC colours correctly
 - Optional grayscale output
 - Optional saturation boost before quantization
+- Optional hue rotation before quantization
+- Optional per-channel RGB gains for colour steering
 - Optional Floyd–Steinberg dithering
 - Plain or RLE-compressed `.ircart` files
 - Strict parser and validator
@@ -149,6 +151,106 @@ python3 ircart.py convert processing/girl.png girl.ircart \
 The default remains `1.0`, so existing conversions are unchanged unless you explicitly request a boost.
 
 Saturation is intended for `--mode color`. It is ignored for practical purposes in grayscale mode.
+
+## Hue shift and RGB colour gains
+
+For difficult source images, you can steer colours before they are mapped to the limited IRC palette.
+
+These controls are applied after resizing and saturation adjustment, but before palette quantization:
+
+```text
+RGB conversion
+→ resize
+→ saturation
+→ hue shift
+→ RGB channel gains
+→ palette quantization / dithering
+→ IRCART cells
+```
+
+### Hue shift
+
+Use:
+
+```bash
+--hue-shift 20
+```
+
+The value is measured in degrees using HSV hue rotation.
+
+Examples:
+
+```text
+0       no change
+120     pure red shifts to green
+-30     rotate hue backwards by 30 degrees
+360     full turn; equivalent to no change
+```
+
+Hue rotation wraps automatically, so negative values and values above `360` are valid.
+
+Greys are unaffected by hue rotation.
+
+Example:
+
+```bash
+python3 ircart.py convert /path/to/image.jpg output.ircart \
+  --palette mirc99 \
+  --mode color \
+  --hue-shift 20 \
+  --encoding rle \
+  --preview output.png
+```
+
+### RGB channel gains
+
+You can also multiply the red, green, and blue channels independently:
+
+```bash
+--red-gain 1.0
+--green-gain 1.0
+--blue-gain 1.0
+```
+
+A gain of:
+
+```text
+0.0   removes that channel
+1.0   leaves it unchanged
+1.15  boosts it by 15%
+```
+
+Values are clipped to the valid `0..255` channel range.
+
+For example, to encourage yellow-green grass to map more strongly toward green:
+
+```bash
+python3 ircart.py convert /path/to/image.jpg output.ircart \
+  --palette mirc99 \
+  --mode color \
+  --hue-shift 15 \
+  --red-gain 0.95 \
+  --green-gain 1.15 \
+  --blue-gain 1.0 \
+  --encoding rle \
+  --preview output.png
+```
+
+These controls affect the whole image. They are simple global adjustments, not selective colour correction or white-balance tools.
+
+They influence palette selection but do not guarantee a particular final IRC colour. For example, increasing green alone may still leave a yellow region mapped to yellow if its red component remains high. A modest hue shift or slight red reduction can provide additional control.
+
+Neutral defaults preserve existing colour behaviour:
+
+```text
+--hue-shift 0
+--red-gain 1.0
+--green-gain 1.0
+--blue-gain 1.0
+```
+
+Hue shift and RGB gains are intended for `--mode color`. In grayscale mode they are validated but otherwise ignored, so grayscale output remains unchanged.
+
 
 ## Grayscale mode
 
@@ -479,6 +581,20 @@ python3 ircart.py convert image.jpg image99-vivid.ircart \
   --palette mirc99 \
   --mode color \
   --saturation 1.6 \
+  --dither none \
+  --encoding rle
+```
+
+For colour steering:
+
+```bash
+python3 ircart.py convert image.jpg image-adjusted.ircart \
+  --palette mirc99 \
+  --mode color \
+  --hue-shift 20 \
+  --red-gain 0.95 \
+  --green-gain 1.15 \
+  --blue-gain 1.0 \
   --dither none \
   --encoding rle
 ```
