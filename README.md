@@ -16,6 +16,7 @@ It was built for an IRC bot, but the format and converter are intentionally gene
   - `mirc16` for broad compatibility
   - `mirc99` for much better colour reproduction on clients that support extended IRC colours correctly
 - Optional grayscale output
+- Optional brightness and contrast adjustment before quantization
 - Optional saturation boost before quantization
 - Optional hue rotation before quantization
 - Optional per-channel RGB gains for colour steering
@@ -107,6 +108,62 @@ python3 ircart.py convert picard.jpg picard.ircart \
 ```
 
 The preview shows the sampled colour grid. Actual IRC appearance still depends on the receiving client's font and colour palette.
+
+## Brightness and contrast
+
+You can adjust brightness and contrast before palette quantization. Both controls use Pillow's `ImageEnhance` implementation and default to neutral values.
+
+Brightness:
+
+```bash
+--brightness 1.0
+```
+
+- `1.0` leaves brightness unchanged
+- values below `1.0` darken the image
+- values above `1.0` brighten it
+- `0.0` produces black
+
+Contrast:
+
+```bash
+--contrast 1.0
+```
+
+- `1.0` leaves contrast unchanged
+- values below `1.0` soften differences
+- values above `1.0` strengthen differences
+- `0.0` produces a flat grey image based on Pillow's mean-luminance behaviour
+
+Example:
+
+```bash
+python3 ircart.py convert /path/to/image.jpg output.ircart \
+  --palette mirc99 \
+  --mode color \
+  --brightness 1.1 \
+  --contrast 1.2 \
+  --encoding rle \
+  --preview output.png
+```
+
+Strong adjustments can clip shadows or highlights. Brightness and contrast are applied after resizing and before saturation, hue rotation, RGB gains, quantization and dithering.
+
+Unlike saturation, hue shift and RGB gains, brightness and contrast also apply in grayscale mode because they meaningfully affect luminance.
+
+The full adjustment order is:
+
+```text
+RGB conversion
+→ resize
+→ brightness
+→ contrast
+→ saturation
+→ hue shift
+→ RGB channel gains
+→ palette quantization / dithering
+→ IRCART cells
+```
 
 ## Saturation
 
@@ -581,6 +638,18 @@ python3 ircart.py convert image.jpg image99-vivid.ircart \
   --palette mirc99 \
   --mode color \
   --saturation 1.6 \
+  --dither none \
+  --encoding rle
+```
+
+For brightness and contrast adjustment:
+
+```bash
+python3 ircart.py convert image.jpg image-levels.ircart \
+  --palette mirc99 \
+  --mode color \
+  --brightness 1.1 \
+  --contrast 1.2 \
   --dither none \
   --encoding rle
 ```

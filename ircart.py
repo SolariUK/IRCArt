@@ -44,6 +44,15 @@ python ircart.py convert image.jpg image-adjusted.ircart \
   --blue-gain 1.0 \
   --encoding rle
 
+Brightness and contrast:
+
+python ircart.py convert image.jpg image-adjusted.ircart \
+  --palette mirc99 \
+  --mode color \
+  --brightness 1.1 \
+  --contrast 1.2 \
+  --encoding rle
+
 """
 
 from __future__ import annotations
@@ -232,13 +241,19 @@ def nearest_grayscale_index(
 
 def validate_colour_adjustments(
     *,
+    brightness: float,
+    contrast: float,
     saturation: float,
     hue_shift: float,
     red_gain: float,
     green_gain: float,
     blue_gain: float,
 ) -> None:
-    """Validate pre-quantization colour adjustment parameters."""
+    """Validate pre-quantization image adjustment parameters."""
+    if not math.isfinite(brightness) or brightness < 0:
+        raise ValueError("brightness must be finite and non-negative")
+    if not math.isfinite(contrast) or contrast < 0:
+        raise ValueError("contrast must be finite and non-negative")
     if not math.isfinite(saturation) or saturation <= 0:
         raise ValueError("saturation must be finite and positive")
     if not math.isfinite(hue_shift):
@@ -251,37 +266,44 @@ def validate_colour_adjustments(
 def adjust_colours(
     image: Image.Image,
     *,
+    brightness: float = 1.0,
+    contrast: float = 1.0,
     saturation: float = 1.0,
     hue_shift: float = 0.0,
     red_gain: float = 1.0,
     green_gain: float = 1.0,
     blue_gain: float = 1.0,
 ) -> Image.Image:
-    """Apply saturation, HSV hue rotation, then RGB channel multipliers."""
+    """Apply brightness, contrast, saturation, hue rotation, then RGB gains."""
     validate_colour_adjustments(
-        saturation=saturation, hue_shift=hue_shift,
-        red_gain=red_gain, green_gain=green_gain, blue_gain=blue_gain,
+        brightness=brightness, contrast=contrast, saturation=saturation,
+        hue_shift=hue_shift, red_gain=red_gain, green_gain=green_gain,
+        blue_gain=blue_gain,
     )
     result = image.convert("RGB")
+    if brightness != 1.0:
+        result = ImageEnhance.Brightness(result).enhance(brightness)
+    if contrast != 1.0:
+        result = ImageEnhance.Contrast(result).enhance(contrast)
     if saturation != 1.0:
         result = ImageEnhance.Color(result).enhance(saturation)
     rotation = (hue_shift % 360.0) / 360.0
     if rotation:
-        pixels=[]
+        pixels = []
         for rgb in result.getdata():
-            h,s,v=colorsys.rgb_to_hsv(*(channel/255.0 for channel in rgb))
-            shifted=colorsys.hsv_to_rgb((h+rotation)%1.0,s,v)
-            pixels.append(tuple(round(channel*255.0) for channel in shifted))
-        adjusted=Image.new("RGB", result.size)
+            h, s, v = colorsys.rgb_to_hsv(*(channel / 255.0 for channel in rgb))
+            shifted = colorsys.hsv_to_rgb((h + rotation) % 1.0, s, v)
+            pixels.append(tuple(round(channel * 255.0) for channel in shifted))
+        adjusted = Image.new("RGB", result.size)
         adjusted.putdata(pixels)
-        result=adjusted
-    gains=(red_gain, green_gain, blue_gain)
-    if gains != (1.0,1.0,1.0):
-        channels=[
-            channel.point([round(max(0,min(255,value*gain))) for value in range(256)])
-            for channel,gain in zip(result.split(), gains)
+        result = adjusted
+    gains = (red_gain, green_gain, blue_gain)
+    if gains != (1.0, 1.0, 1.0):
+        channels = [
+            channel.point([round(max(0, min(255, value * gain))) for value in range(256)])
+            for channel, gain in zip(result.split(), gains)
         ]
-        result=Image.merge("RGB", channels)
+        result = Image.merge("RGB", channels)
     return result
 
 def choose_output_size(
@@ -395,6 +417,8 @@ def image_to_ircart(
     mode: str = "color",
     saturation: float = 1.0,
     *,
+    brightness: float = 1.0,
+    contrast: float = 1.0,
     hue_shift: float = 0.0,
     red_gain: float = 1.0,
     green_gain: float = 1.0,
@@ -410,8 +434,9 @@ def image_to_ircart(
     resized = image.resize((width, sample_height), Image.Resampling.LANCZOS)
 
     validate_colour_adjustments(
-        saturation=saturation, hue_shift=hue_shift,
-        red_gain=red_gain, green_gain=green_gain, blue_gain=blue_gain,
+        brightness=brightness, contrast=contrast, saturation=saturation,
+        hue_shift=hue_shift, red_gain=red_gain, green_gain=green_gain,
+        blue_gain=blue_gain,
     )
 
     if mode not in {"color", "grayscale"}:
@@ -419,8 +444,15 @@ def image_to_ircart(
 
     if mode == "color":
         resized = adjust_colours(
-            resized, saturation=saturation, hue_shift=hue_shift,
+            resized, brightness=brightness, contrast=contrast,
+            saturation=saturation, hue_shift=hue_shift,
             red_gain=red_gain, green_gain=green_gain, blue_gain=blue_gain,
+        )
+    else:
+        resized = adjust_colours(
+            resized, brightness=brightness, contrast=contrast,
+            saturation=1.0, hue_shift=0.0,
+            red_gain=1.0, green_gain=1.0, blue_gain=1.0,
         )
 
     palette = palette_rgb(palette_name)
@@ -497,6 +529,8 @@ def convert_file(
     saturation: float = 1.0,
     preview_path: Path | None = None,
     *,
+    brightness: float = 1.0,
+    contrast: float = 1.0,
     hue_shift: float = 0.0,
     red_gain: float = 1.0,
     green_gain: float = 1.0,
@@ -512,6 +546,8 @@ def convert_file(
             encoding=encoding,
             mode=mode,
             saturation=saturation,
+            brightness=brightness,
+            contrast=contrast,
             hue_shift=hue_shift,
             red_gain=red_gain,
             green_gain=green_gain,
@@ -845,6 +881,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="image colour mode (default: color)",
     )
     p_convert.add_argument(
+        "--brightness",
+        type=float,
+        default=1.0,
+        help="multiply brightness before quantization (default: 1.0)",
+    )
+    p_convert.add_argument(
+        "--contrast",
+        type=float,
+        default=1.0,
+        help="multiply contrast before quantization (default: 1.0)",
+    )
+    p_convert.add_argument(
         "--saturation",
         type=float,
         default=1.0,
@@ -899,6 +947,8 @@ def main() -> None:
             mode=args.mode,
             saturation=args.saturation,
             preview_path=args.preview,
+            brightness=args.brightness,
+            contrast=args.contrast,
             hue_shift=args.hue_shift,
             red_gain=args.red_gain,
             green_gain=args.green_gain,
@@ -908,6 +958,7 @@ def main() -> None:
             f"Wrote {args.output}: {art.width} chars x {art.height} lines; "
             f"palette={art.palette}; dither={args.dither}; "
             f"encoding={art.encoding}; mode={args.mode}; "
+            f"brightness={args.brightness}; contrast={args.contrast}; "
             f"saturation={args.saturation}; hue_shift={args.hue_shift}; "
             f"gains=({args.red_gain},{args.green_gain},{args.blue_gain})"
         )
