@@ -21,6 +21,7 @@ It was built for an IRC bot, but the format and converter are intentionally gene
 - Optional hue rotation before quantization
 - Optional per-channel RGB gains for colour steering
 - Optional Floyd–Steinberg dithering
+- Separate pixel-art preparation tool with colour cleanup and integer downscaling
 - Plain or RLE-compressed `.ircart` files
 - Strict parser and validator
 - Optimized IRC rendering with redundant colour changes removed
@@ -43,10 +44,15 @@ Typical files in this setup are:
 
 ```text
 ircart.py
+prepare.py
 ircart_helper.py
 ```
 
 `ircart.py` handles image conversion, `.ircart` parsing, validation, preview generation, and IRC rendering.
+
+`prepare.py` prepares enlarged pixel art: optional colour cleanup, background
+trimming, integer downscaling, an editable small PNG and enlarged preview.
+It can also export an IRCART asset after checking its rendered byte lengths.
 
 `ircart_helper.py` is intended for use inside the bot. It loads a `.ircart` file and returns ready-to-send IRC message bodies without performing any sending, sleeping, throttling, or queue management.
 
@@ -99,9 +105,9 @@ python3 ircart.py convert picard.jpg picard.ircart \
 Use `--no-scaling` to keep the source pixel dimensions instead of resizing:
 
 ```bash
-python3 ircart.py convert tmp/zombiedave.png tmp/zombiedave.ircart \
+python3 ircart.py convert image.png output.ircart \
   --no-scaling --palette mirc99 --dither none --encoding rle \
-  --preview tmp/zombiedave-preview.png
+  --preview output-preview.png
 ```
 
 A 26 × 32 pixel image automatically becomes 26 characters × 16 IRC lines.
@@ -127,14 +133,13 @@ sampling selects existing pixels instead of blending neighbouring colours.
 The default `--resample lanczos` retains the existing smooth resizing behaviour
 for photographs.
 
-For a gentler reduction of the 54 × 70 Bins image to a sampled 47 × 60 grid
-(47 characters × 30 IRC lines):
+For example, resize within 32 characters × 16 IRC lines:
 
 ```bash
-python3 ircart.py convert tmp/bins4.png tmp/bins-nearest.ircart \
-  --max-width 47 --max-height 30 --resample nearest \
+python3 ircart.py convert image.png output.ircart \
+  --max-width 32 --max-height 16 --resample nearest \
   --palette mirc99 --dither none --encoding rle \
-  --preview tmp/bins-nearest-preview.png
+  --preview output-preview.png
 ```
 
 The existing aspect-ratio calculation still determines the dimensions from
@@ -146,6 +151,44 @@ preserving two-colour art. Palette mapping still applies.
 `--no-scaling` bypasses resizing regardless of the selected resampling method.
 The Python APIs accept the keyword argument `resample="nearest"` (or the
 default `"lanczos"`). Rendering and the `.ircart` format are unchanged.
+
+## Prepare enlarged pixel art
+
+Use the separate preparation tool to clean and downscale block artwork:
+
+```bash
+python3 prepare.py image.png image-small.png \
+  --colours 000000,ffffff --ircart image.ircart
+```
+
+This example restricts the image to black and white. Choose the actual block
+colours for your image, or omit `--colours` to retain the source colours.
+The tool trims background margins, adds a one-pixel border, pads for an integer
+reduction, and saves the small PNG plus `image-small-preview.png`.
+
+The default `--factor auto` prefers an exact pixel-grid reduction that fits
+36 IRC columns, 18 lines and a 350-byte body budget. If an exact reduction cannot
+fit, it chooses a fitting nearest-neighbour reduction and reports that detail
+may be lost. Use `--require-exact` to reject that fallback, or `--factor N` to
+choose a reduction explicitly. Set limits to match your bot with `--max-width`,
+`--max-height` and `--max-body-bytes`.
+
+For a default 12× preview edited on whole pixel squares, preserve its frame:
+
+```bash
+python3 prepare.py edited-preview.png edited-small.png \
+  --factor 12 --keep-frame --colours 000000,ffffff \
+  --ircart edited.ircart
+```
+
+`--keep-frame` rejects off-grid edits rather than silently losing them. The
+prepared image receives one background row if needed for an even pixel height.
+Source files are preserved. Check small details in the preview: colour cleanup
+cannot recover information already lost in the source.
+
+See the [preparation guide](examples/clean-downscaling.md) or
+`python3 prepare.py --help` for more options. Exported IRCART files use the
+existing upper-half-block renderer.
 
 ## Previewing output
 
