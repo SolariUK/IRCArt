@@ -120,6 +120,33 @@ Palette mapping and any requested image adjustments still apply. For crisp
 pixel art, use no dithering and neutral adjustment settings. Existing commands
 without `--no-scaling` retain the original Lanczos resizing behaviour.
 
+## Resizing pixel art
+
+Use `--resample nearest` when resizing sharp pixel art. Nearest-neighbour
+sampling selects existing pixels instead of blending neighbouring colours.
+The default `--resample lanczos` retains the existing smooth resizing behaviour
+for photographs.
+
+For a gentler reduction of the 54 × 70 Bins image to a sampled 47 × 60 grid
+(47 characters × 30 IRC lines):
+
+```bash
+python3 ircart.py convert tmp/bins4.png tmp/bins-nearest.ircart \
+  --max-width 47 --max-height 30 --resample nearest \
+  --palette mirc99 --dither none --encoding rle \
+  --preview tmp/bins-nearest-preview.png
+```
+
+The existing aspect-ratio calculation still determines the dimensions from
+the limits. Nearest-neighbour resizing can drop thin features and produce
+uneven edges, particularly at non-integer scale factors. It adds no blended
+colours during resizing; keep adjustments neutral and dithering off when
+preserving two-colour art. Palette mapping still applies.
+
+`--no-scaling` bypasses resizing regardless of the selected resampling method.
+The Python APIs accept the keyword argument `resample="nearest"` (or the
+default `"lanczos"`). Rendering and the `.ircart` format are unchanged.
+
 ## Previewing output
 
 The converter can also write a PNG preview of the quantized artwork:

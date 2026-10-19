@@ -88,5 +88,78 @@ class NativeSizeTests(unittest.TestCase):
                 self.assertEqual(preview.size, (312, 384))
 
 
+class ResamplingTests(unittest.TestCase):
+    def test_nearest_integer_downscale_selects_exact_source_pixels(self):
+        palette = ircart.palette_rgb("mirc16")
+        image = Image.new("RGB", (4, 4), "black")
+        for position, index in (((1, 1), 4), ((3, 1), 2),
+                                ((1, 3), 1), ((3, 3), 0)):
+            image.putpixel(position, palette[index])
+        art = ircart.image_to_ircart(
+            image, max_width=2, max_height=1, resample="nearest")
+        self.assertEqual((art.width, art.height), (2, 1))
+        self.assertEqual(art.rows, ((ircart.Cell(4, 1), ircart.Cell(2, 0)),))
+
+    def test_nearest_keeps_two_colours_at_noninteger_scale(self):
+        image = Image.new("RGB", (8, 8))
+        image.putdata([(255, 255, 255) if (x + y) % 2 else (0, 0, 0)
+                       for y in range(8) for x in range(8)])
+        settings = dict(max_width=5, max_height=3, palette_name="mirc99")
+        nearest = ircart.image_to_ircart(image, resample="nearest", **settings)
+        smooth = ircart.image_to_ircart(image, resample="lanczos", **settings)
+        nearest_colours = {value for row in nearest.rows for cell in row
+                           for value in (cell.fg, cell.bg)}
+        smooth_colours = {value for row in smooth.rows for cell in row
+                          for value in (cell.fg, cell.bg)}
+        self.assertEqual(nearest_colours, {0, 1})
+        self.assertTrue(smooth_colours - {0, 1})
+
+    def test_default_matches_explicit_lanczos(self):
+        image = Image.new("RGB", (7, 5))
+        image.putdata([(i * 17 % 256, i * 31 % 256, i * 47 % 256)
+                       for i in range(35)])
+        for palette in ("mirc16", "mirc99"):
+            for mode in ("color", "grayscale"):
+                for dither in ("none", "floyd-steinberg"):
+                    settings = dict(palette_name=palette, mode=mode, dither=dither,
+                                    max_width=5, max_height=2)
+                    self.assertEqual(
+                        ircart.image_to_ircart(image, **settings).to_text(),
+                        ircart.image_to_ircart(
+                            image, resample="lanczos", **settings).to_text())
+
+    def test_no_scaling_bypasses_filter_and_invalid_method_is_rejected(self):
+        image = Image.new("RGB", (4, 4), "red")
+        self.assertEqual(
+            ircart.image_to_ircart(image, no_scaling=True).to_text(),
+            ircart.image_to_ircart(
+                image, no_scaling=True, resample="nearest").to_text())
+        for no_scaling in (True, False):
+            with self.assertRaisesRegex(ValueError, "unknown resampling method"):
+                ircart.image_to_ircart(
+                    image, resample="invalid", no_scaling=no_scaling)
+
+    def test_cli_passes_filter_through_conversion_and_preview(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = Image.new("RGB", (8, 8))
+            image.putdata([(255, 255, 255) if (x + y) % 2 else (0, 0, 0)
+                           for y in range(8) for x in range(8)])
+            image.save(root / "input.png")
+            subprocess.run(
+                [sys.executable, "-B", str(Path(ircart.__file__)), "convert",
+                 str(root / "input.png"), str(root / "out.ircart"),
+                 "--resample", "nearest", "--max-width", "5", "--max-height", "3",
+                 "--palette", "mirc99", "--preview", str(root / "preview.png")],
+                capture_output=True, text=True, check=True)
+            actual = ircart.load_ircart(root / "out.ircart")
+            expected = ircart.image_to_ircart(
+                image, max_width=5, max_height=3, palette_name="mirc99",
+                resample="nearest")
+            self.assertEqual(actual, expected)
+            with Image.open(root / "preview.png") as preview:
+                self.assertEqual(set(preview.getdata()), {(0, 0, 0), (255, 255, 255)})
+
+
 if __name__ == "__main__":
     unittest.main()

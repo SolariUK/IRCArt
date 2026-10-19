@@ -426,7 +426,14 @@ def image_to_ircart(
     blue_gain: float = 1.0,
     no_scaling: bool = False,
     padding_colour: int = 1,
+    resample: str = "lanczos",
 ) -> IRCArt:
+    resampling = {
+        "lanczos": Image.Resampling.LANCZOS,
+        "nearest": Image.Resampling.NEAREST,
+    }
+    if resample not in resampling:
+        raise ValueError(f"unknown resampling method: {resample}")
     image = image.convert("RGB")
     if no_scaling:
         width, height = image.width, (image.height + 1) // 2
@@ -446,7 +453,7 @@ def image_to_ircart(
             image.width, image.height,
             max_width=max_width, max_height=max_height
         )
-        resized = image.resize((width, height * 2), Image.Resampling.LANCZOS)
+        resized = image.resize((width, height * 2), resampling[resample])
 
     validate_colour_adjustments(
         brightness=brightness, contrast=contrast, saturation=saturation,
@@ -561,6 +568,7 @@ def convert_file(
     blue_gain: float = 1.0,
     no_scaling: bool = False,
     padding_colour: int = 1,
+    resample: str = "lanczos",
 ) -> IRCArt:
     with Image.open(input_path) as image:
         art = image_to_ircart(
@@ -580,6 +588,7 @@ def convert_file(
             blue_gain=blue_gain,
             no_scaling=no_scaling,
             padding_colour=padding_colour,
+            resample=resample,
         )
 
     output_path.write_text(art.to_text(), encoding="utf-8")
@@ -890,6 +899,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                            help="maximum height in IRC lines, two pixel rows each (default: 18)")
     p_convert.add_argument("--no-scaling", action="store_true",
                            help="preserve source pixel dimensions; pad odd heights by one row")
+    p_convert.add_argument(
+        "--resample", choices=("lanczos", "nearest"), default="lanczos",
+        help="resizing filter (default: lanczos); ignored with --no-scaling",
+    )
     p_convert.add_argument("--padding-colour", type=int, default=1,
                            help="IRC palette index for the extra row with --no-scaling (default: 1, black)")
     p_convert.add_argument(
@@ -989,10 +1002,12 @@ def main() -> None:
             blue_gain=args.blue_gain,
             no_scaling=args.no_scaling,
             padding_colour=args.padding_colour,
+            resample=args.resample,
         )
         print(
             f"Wrote {args.output}: {art.width} chars x {art.height} lines; "
             f"palette={art.palette}; dither={args.dither}; "
+            f"scaling={'none' if args.no_scaling else args.resample}; "
             f"encoding={art.encoding}; mode={args.mode}; "
             f"brightness={args.brightness}; contrast={args.contrast}; "
             f"saturation={args.saturation}; hue_shift={args.hue_shift}; "
