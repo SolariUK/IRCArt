@@ -62,6 +62,7 @@ from pathlib import Path
 import argparse
 import colorsys
 import math
+import warnings
 from typing import Iterable
 
 from PIL import Image, ImageEnhance
@@ -423,15 +424,29 @@ def image_to_ircart(
     red_gain: float = 1.0,
     green_gain: float = 1.0,
     blue_gain: float = 1.0,
+    no_scaling: bool = False,
+    padding_colour: int = 1,
 ) -> IRCArt:
     image = image.convert("RGB")
-    width, height = choose_output_size(
-        image.width, image.height,
-        max_width=max_width, max_height=max_height
-    )
-
-    sample_height = height * 2
-    resized = image.resize((width, sample_height), Image.Resampling.LANCZOS)
+    if no_scaling:
+        width, height = image.width, (image.height + 1) // 2
+        if max_width <= 0 or max_height <= 0:
+            raise ValueError("invalid output bounds")
+        if width > max_width or height > max_height:
+            raise ValueError(
+                f"native image requires {width} characters x {height} IRC lines; "
+                f"raise --max-width to at least {width} and --max-height "
+                f"to at least {height}, or omit --no-scaling"
+            )
+        if not 0 <= padding_colour < len(palette_rgb(palette_name)):
+            raise ValueError("padding colour must be an index in the selected palette")
+        resized = image
+    else:
+        width, height = choose_output_size(
+            image.width, image.height,
+            max_width=max_width, max_height=max_height
+        )
+        resized = image.resize((width, height * 2), Image.Resampling.LANCZOS)
 
     validate_colour_adjustments(
         brightness=brightness, contrast=contrast, saturation=saturation,
@@ -473,6 +488,15 @@ def image_to_ircart(
         )
     else:
         raise ValueError(f"unknown dither mode: {dither}")
+
+    if no_scaling and image.height % 2:
+        q.append([padding_colour] * width)
+        warnings.warn(
+            f"Input height is {image.height} pixels; added one background row "
+            f"(palette index {padding_colour}) to produce {height} IRC lines.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     rows = []
     for line_y in range(height):
@@ -535,6 +559,8 @@ def convert_file(
     red_gain: float = 1.0,
     green_gain: float = 1.0,
     blue_gain: float = 1.0,
+    no_scaling: bool = False,
+    padding_colour: int = 1,
 ) -> IRCArt:
     with Image.open(input_path) as image:
         art = image_to_ircart(
@@ -552,6 +578,8 @@ def convert_file(
             red_gain=red_gain,
             green_gain=green_gain,
             blue_gain=blue_gain,
+            no_scaling=no_scaling,
+            padding_colour=padding_colour,
         )
 
     output_path.write_text(art.to_text(), encoding="utf-8")
@@ -657,7 +685,7 @@ def parse_rle_token(token: str, limit: int, remaining: int) -> tuple[int, Cell]:
 def parse_ircart_text(
     text: str,
     *,
-    max_width: int = 40,
+    max_width: int = 512,
     max_height: int = 20,
 ) -> IRCArt:
     lines = text.splitlines()
@@ -743,7 +771,7 @@ def parse_ircart_text(
 def load_ircart(
     path: Path,
     *,
-    max_width: int = 40,
+    max_width: int = 512,
     max_height: int = 20,
 ) -> IRCArt:
     return parse_ircart_text(
@@ -826,7 +854,7 @@ def render_file(
     input_path: Path,
     output_path: Path,
     *,
-    max_width: int = 40,
+    max_width: int = 512,
     max_height: int = 20,
     reset: bool = True,
     escape: bool = False,
@@ -856,8 +884,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_convert = sub.add_parser("convert", help="convert image to IRCART/1")
     p_convert.add_argument("input", type=Path)
     p_convert.add_argument("output", type=Path)
-    p_convert.add_argument("--max-width", type=int, default=36)
-    p_convert.add_argument("--max-height", type=int, default=18)
+    p_convert.add_argument("--max-width", type=int, default=36,
+                           help="maximum width in IRC characters (default: 36)")
+    p_convert.add_argument("--max-height", type=int, default=18,
+                           help="maximum height in IRC lines, two pixel rows each (default: 18)")
+    p_convert.add_argument("--no-scaling", action="store_true",
+                           help="preserve source pixel dimensions; pad odd heights by one row")
+    p_convert.add_argument("--padding-colour", type=int, default=1,
+                           help="IRC palette index for the extra row with --no-scaling (default: 1, black)")
     p_convert.add_argument(
         "--palette",
         choices=sorted(PALETTES),
@@ -911,7 +945,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_render = sub.add_parser("render", help="render IRCART/1 to IRC text")
     p_render.add_argument("input", type=Path)
     p_render.add_argument("output", type=Path)
-    p_render.add_argument("--max-width", type=int, default=40)
+    p_render.add_argument("--max-width", type=int, default=512)
     p_render.add_argument("--max-height", type=int, default=20)
     p_render.add_argument(
         "--no-reset",
@@ -926,7 +960,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     p_inspect = sub.add_parser("inspect", help="validate and summarize IRCART/1")
     p_inspect.add_argument("input", type=Path)
-    p_inspect.add_argument("--max-width", type=int, default=40)
+    p_inspect.add_argument("--max-width", type=int, default=512)
     p_inspect.add_argument("--max-height", type=int, default=20)
 
     return p
@@ -953,6 +987,8 @@ def main() -> None:
             red_gain=args.red_gain,
             green_gain=args.green_gain,
             blue_gain=args.blue_gain,
+            no_scaling=args.no_scaling,
+            padding_colour=args.padding_colour,
         )
         print(
             f"Wrote {args.output}: {art.width} chars x {art.height} lines; "

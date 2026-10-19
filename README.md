@@ -94,6 +94,32 @@ python3 ircart.py convert picard.jpg picard.ircart \
   --max-height 20
 ```
 
+## Native-size pixel art
+
+Use `--no-scaling` to keep the source pixel dimensions instead of resizing:
+
+```bash
+python3 ircart.py convert tmp/zombiedave.png tmp/zombiedave.ircart \
+  --no-scaling --palette mirc99 --dither none --encoding rle \
+  --preview tmp/zombiedave-preview.png
+```
+
+A 26 × 32 pixel image automatically becomes 26 characters × 16 IRC lines.
+`--max-width` is measured in characters; `--max-height` is measured in IRC
+lines, each representing two pixel rows. These remain size limits, including
+with `--no-scaling`: larger inputs are rejected with instructions for raising
+the limits. The defaults allow up to 36 × 36 source pixels.
+
+Odd source heights produce a warning and receive one extra bottom pixel row.
+That row defaults to black; use `--padding-colour INDEX` to choose another
+colour index from the selected IRC palette. Padding is added after image
+adjustments and quantization, so it neither affects contrast calculations nor
+changes colour with adjustments or dithering.
+
+Palette mapping and any requested image adjustments still apply. For crisp
+pixel art, use no dithering and neutral adjustment settings. Existing commands
+without `--no-scaling` retain the original Lanczos resizing behaviour.
+
 ## Previewing output
 
 The converter can also write a PNG preview of the quantized artwork:
@@ -561,7 +587,9 @@ for line, size in zip(art.lines, art.utf8_bytes):
     print(size, line)
 ```
 
-You can optionally enforce a body-size budget:
+`load_for_irc()` enforces a 400-byte message-body budget by default. It checks
+the actual rendered UTF-8 bytes, including colour codes and the trailing reset,
+rather than estimating from image width. Override the budget explicitly:
 
 ```python
 art = load_for_irc(
@@ -571,6 +599,22 @@ art = load_for_irc(
 ```
 
 If any rendered message body exceeds the configured limit, the helper raises `IRCArtError`.
+
+Wide artwork is accepted when every line fits that budget. The helper and
+converter's `inspect`/`render` commands use a separate 512-column parsing guard;
+this bounds resource use rather than determining IRC suitability. The default
+height limit remains 20 IRC lines and the helper's text-size limit remains
+64 KiB. Conversion still defaults to fitting within 36 characters × 18 lines.
+
+For example, a native 98 × 24 image can be converted with
+`--no-scaling --max-width 98`, producing 98 characters × 12 lines. Its byte
+requirements depend on the number of colour transitions. RLE only compresses
+the asset file and does not reduce the rendered message-body size.
+
+Pass the bot's actual body budget to `load_for_irc()`. An explicit
+`max_body_bytes=None` disables the helper check only when the sending layer
+enforces its own budget. Extra formatting appended by the bot needs additional
+space and is not included in the helper's reported sizes.
 
 This is intentionally a message-body limit only. Your IRC layer may need to account separately for:
 

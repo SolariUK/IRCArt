@@ -30,6 +30,10 @@ IRC_COLOR = "\x03"
 IRC_RESET = "\x0f"
 HALF_BLOCK = "▀"
 
+# Resource guards are separate from the actual rendered message-body budget.
+DEFAULT_MAX_WIDTH = 512
+DEFAULT_MAX_BODY_BYTES = 400
+
 # IRC colour indexes available to the file format.
 # For validation the bot only needs their counts, not RGB values.
 PALETTE_SIZES = {
@@ -163,15 +167,15 @@ def _parse_rle_token(
 def parse_ircart(
     text: str,
     *,
-    max_width: int = 40,
+    max_width: int = DEFAULT_MAX_WIDTH,
     max_height: int = 20,
     max_text_bytes: int = 64 * 1024,
 ) -> IRCArt:
     """
     Parse and validate IRCART/1 text.
 
-    The size limits are intentionally conservative because this is bot-side
-    code. Adjust them if you deliberately want larger art.
+    Dimension and text-size limits bound parsing work. They do not establish
+    whether rendered lines fit IRC; load_for_irc checks that separately.
     """
     if not isinstance(text, str):
         raise TypeError("text must be str")
@@ -270,7 +274,7 @@ def parse_ircart(
 def load_ircart(
     path: str | Path,
     *,
-    max_width: int = 40,
+    max_width: int = DEFAULT_MAX_WIDTH,
     max_height: int = 20,
     max_text_bytes: int = 64 * 1024,
 ) -> IRCArt:
@@ -351,10 +355,10 @@ def render_ircart(art: IRCArt, *, reset_each_line: bool = True) -> RenderedIRCAr
 def load_for_irc(
     path: str | Path,
     *,
-    max_width: int = 40,
+    max_width: int = DEFAULT_MAX_WIDTH,
     max_height: int = 20,
     max_text_bytes: int = 64 * 1024,
-    max_body_bytes: int | None = None,
+    max_body_bytes: int | None = DEFAULT_MAX_BODY_BYTES,
     reset_each_line: bool = True,
 ) -> RenderedIRCArt:
     """
@@ -363,10 +367,16 @@ def load_for_irc(
     Returns rendered message bodies only. It deliberately does NOT send,
     sleep, queue, throttle, or split them.
 
-    If `max_body_bytes` is supplied, any rendered line exceeding that exact
-    UTF-8 body budget is rejected. Leave it as None if your IRC layer already
-    calculates the correct per-message budget including command/target/etc.
+    Each rendered line, including colour controls and any trailing reset, must
+    fit max_body_bytes (default 400 UTF-8 bytes). Callers should supply their
+    own transport-aware body budget, accounting for command, target, CRLF,
+    any additional formatting, and server-prefix allowance where needed.
+    Explicit None disables this check for callers enforcing it elsewhere.
+    Width is only a parsing resource guard (default 512 columns).
     """
+    if max_body_bytes is not None and max_body_bytes <= 0:
+        raise ValueError("max_body_bytes must be positive")
+
     art = load_ircart(
         path,
         max_width=max_width,
@@ -376,9 +386,6 @@ def load_for_irc(
     rendered = render_ircart(art, reset_each_line=reset_each_line)
 
     if max_body_bytes is not None:
-        if max_body_bytes <= 0:
-            raise ValueError("max_body_bytes must be positive")
-
         too_long = [
             (i + 1, size)
             for i, size in enumerate(rendered.utf8_bytes)
