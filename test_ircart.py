@@ -161,5 +161,53 @@ class ResamplingTests(unittest.TestCase):
                 self.assertEqual(set(preview.getdata()), {(0, 0, 0), (255, 255, 255)})
 
 
+class OutputFormatTests(unittest.TestCase):
+    def test_direct_irc_matches_two_step_workflow_and_preview(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = Image.new("RGB", (7, 8))
+            image.putdata([((i * 43) % 256, (i * 71) % 256, (i * 19) % 256)
+                           for i in range(56)])
+            image.save(root / "source.png")
+            cli = [sys.executable, str(Path(ircart.__file__))]
+            for encoding in ("plain", "rle"):
+                for fmt in (None, "ircart", "irc"):
+                    name = fmt or "default"
+                    target = root / f"{encoding}-{name}.data"
+                    preview = root / f"{encoding}-{name}.png"
+                    args = ["convert", str(root / "source.png"), str(target),
+                            "--palette", "mirc99", "--encoding", encoding,
+                            "--red-gain", "1.1", "--blue-gain", "1.9",
+                            "--contrast", "1.3", "--brightness", "0.65",
+                            "--max-width", "7", "--max-height", "4",
+                            "--preview", str(preview)]
+                    if fmt:
+                        args += ["--output-format", fmt]
+                    result = subprocess.run(cli + args, capture_output=True,
+                                            text=True, check=True)
+                    if fmt is None:
+                        art = ircart.load_ircart(target)
+                        reference = root / "rendered.txt"
+                        subprocess.run(cli + ["render", str(target), str(reference)],
+                                       capture_output=True, text=True, check=True)
+                        expected = reference.read_bytes()
+                        expected_preview = preview.read_bytes()
+                        expected_asset = target.read_bytes()
+                    elif fmt == "ircart":
+                        self.assertEqual(target.read_bytes(), expected_asset)
+                    else:
+                        self.assertEqual(target.read_bytes(), expected)
+                        self.assertIn(b"\x03", expected)
+                        self.assertTrue(all(line.endswith(b"\x0f")
+                                            for line in expected.splitlines()))
+                    self.assertEqual(preview.read_bytes(), expected_preview)
+                    maximum = max(len(line) for line in expected.splitlines())
+                    self.assertIn(f"max_line_bytes={maximum};", result.stdout)
+                if encoding == "plain":
+                    plain_output = expected
+                else:
+                    self.assertEqual(expected, plain_output)
+
+
 if __name__ == "__main__":
     unittest.main()

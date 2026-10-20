@@ -569,7 +569,10 @@ def convert_file(
     no_scaling: bool = False,
     padding_colour: int = 1,
     resample: str = "lanczos",
+    output_format: str = "ircart",
 ) -> IRCArt:
+    if output_format not in ("ircart", "irc"):
+        raise ValueError("output_format must be 'ircart' or 'irc'")
     with Image.open(input_path) as image:
         art = image_to_ircart(
             image,
@@ -591,7 +594,9 @@ def convert_file(
             resample=resample,
         )
 
-    output_path.write_text(art.to_text(), encoding="utf-8")
+    text = (art.to_text() if output_format == "ircart"
+            else "\n".join(render_irc_lines(art)) + "\n")
+    output_path.write_text(text, encoding="utf-8")
 
     if preview_path is not None:
         render_preview(art).save(preview_path)
@@ -893,6 +898,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_convert = sub.add_parser("convert", help="convert image to IRCART/1")
     p_convert.add_argument("input", type=Path)
     p_convert.add_argument("output", type=Path)
+    p_convert.add_argument(
+        "--output-format", choices=("ircart", "irc"), default="ircart",
+        help="output IRCART/1 or ready-to-send IRC text (default: ircart)",
+    )
     p_convert.add_argument("--max-width", type=int, default=36,
                            help="maximum width in IRC characters (default: 36)")
     p_convert.add_argument("--max-height", type=int, default=18,
@@ -1003,11 +1012,13 @@ def main() -> None:
             no_scaling=args.no_scaling,
             padding_colour=args.padding_colour,
             resample=args.resample,
+            output_format=args.output_format,
         )
         max_line_bytes = max(len(line.encode("utf-8")) for line in render_irc_lines(art))
         print(
             f"Wrote {args.output}: {art.width} chars x {art.height} lines; "
             f"max_line_bytes={max_line_bytes}; "
+            f"output_format={args.output_format}; "
             f"palette={art.palette}; dither={args.dither}; "
             f"scaling={'none' if args.no_scaling else args.resample}; "
             f"encoding={art.encoding}; mode={args.mode}; "

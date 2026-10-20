@@ -83,6 +83,23 @@ Compare this with your bot's body budget; IRC protocol overhead is excluded.
 reset byte, while `--escape` still reports the raw IRC body size rather than
 the longer debug representation.
 
+For ordinary IRC text without an intermediate IRCART file, add
+`--output-format irc`:
+
+```bash
+python3 ircart.py convert image.png image.txt \
+  --output-format irc --palette mirc99 --preview image-preview.png
+```
+
+This writes UTF-8 text with actual IRC colour controls, half-block characters,
+and a reset at the end of each line, ready for a bot to send line by line.
+Image adjustments, scaling, previews and byte reporting work the same way.
+The default is `--output-format ircart`, so existing commands are unchanged.
+The explicit format determines the contents, regardless of filename extension.
+`--encoding plain|rle` affects IRCART storage only; either setting produces
+identical direct IRC text. Neither format enforces a network byte budget;
+compare `max_line_bytes` with your sender's budget.
+
 PNG works too:
 
 ```bash
