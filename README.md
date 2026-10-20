@@ -76,6 +76,13 @@ python3 ircart.py convert picard.jpg picard.ircart \
   --encoding rle
 ```
 
+The completion output includes `max_line_bytes`, the largest rendered IRC
+message body in UTF-8 bytes, including colour controls and the trailing reset.
+Compare this with your bot's body budget; IRC protocol overhead is excluded.
+`inspect` and `render` report it too. For `render`, `--no-reset` excludes the
+reset byte, while `--escape` still reports the raw IRC body size rather than
+the longer debug representation.
+
 PNG works too:
 
 ```bash

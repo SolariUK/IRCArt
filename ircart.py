@@ -1004,8 +1004,10 @@ def main() -> None:
             padding_colour=args.padding_colour,
             resample=args.resample,
         )
+        max_line_bytes = max(len(line.encode("utf-8")) for line in render_irc_lines(art))
         print(
             f"Wrote {args.output}: {art.width} chars x {art.height} lines; "
+            f"max_line_bytes={max_line_bytes}; "
             f"palette={art.palette}; dither={args.dither}; "
             f"scaling={'none' if args.no_scaling else args.resample}; "
             f"encoding={art.encoding}; mode={args.mode}; "
@@ -1022,9 +1024,14 @@ def main() -> None:
             reset=not args.no_reset,
             escape=args.escape,
         )
+        max_line_bytes = max(
+            len(line.encode("utf-8"))
+            for line in render_irc_lines(art, reset=not args.no_reset)
+        )
         print(
             f"Rendered {args.input} -> {args.output}: "
-            f"{art.width} chars x {art.height} lines; palette={art.palette}"
+            f"{art.width} chars x {art.height} lines; palette={art.palette}; "
+            f"max_line_bytes={max_line_bytes}"
         )
     elif args.cmd == "inspect":
         art = load_ircart(
@@ -1032,9 +1039,10 @@ def main() -> None:
             max_width=args.max_width,
             max_height=args.max_height,
         )
+        max_line_bytes = max(len(line.encode("utf-8")) for line in render_irc_lines(art))
         print(
             f"Valid IRCART/1: palette={art.palette}, "
-            f"{art.width} chars x {art.height} lines"
+            f"{art.width} chars x {art.height} lines; max_line_bytes={max_line_bytes}"
         )
     else:
         raise AssertionError(f"unhandled command: {args.cmd}")
